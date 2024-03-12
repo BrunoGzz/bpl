@@ -83,7 +83,7 @@ def parse_tokens(tokens):
             # Recoger los argumentos de la función
             i += 1
             while i < len(tokens) and tokens[i].type != 'openbracket':
-                if tokens[i].type != hex:
+                if tokens[i].type != "hex":
                     handle_errors("Syntax error", f"Unexpected token: {token.value}", code_segment=str(tokens[i:i+3]))
                 else:
                     arguments.append(tokens[i].value)
@@ -148,6 +148,12 @@ class AssignmentNode:
         self.variable = variable
         self.value = value
 
+class AssignmentFunctionNode:
+    def __init__(self, variable, name, arguments):
+        self.name = name
+        self.arguments = arguments
+        self.variable = variable
+
 class FunctionNode:
     def __init__(self, name, arguments, body):
         self.name = name
@@ -195,6 +201,18 @@ def parse_function_body(tokens):
                     value = tokens[i + 1].value
                 body.append(AssignmentNode(variable, value))
                 i += 2
+            elif tokens[i+1].type == "fncall":
+                i += 2
+                arguments = []
+                while i < len(tokens) and tokens[i].type != 'semicolon':
+                    if tokens[i].type != "hex":
+                        handle_errors("Syntax error", f"Unexpected function token: {token.value}", code_segment=str(tokens[i:i+3]))
+                    else:
+                        arguments.append(tokens[i].value)
+                        i += 1
+                print(arguments)
+                body.append(AssignmentFunctionNode(variable, tokens[i+1].value, arguments))
+            
             elif tokens[i + 2].type == 'logicoperator' and (tokens[i + 1].type == "hex" or tokens[i + 1].type == "bit") and (tokens[i + 1].type == "hex" or tokens[i + 1].type == "bit"):
                 out_index = i
                 variable = token.value
@@ -300,6 +318,8 @@ def execute_ast(ast, variables=None, functions=None, externalVariables=None):
         
         elif isinstance(node, AssignmentNode):
             variables[node.variable] = node.value
+        elif isinstance(node, AssignmentFunctionNode):
+            variables[node.variable] = execute_function(node.name, node.arguments, variables, functions)
         elif isinstance(node, AssignmentOperationNode):
             for arg_type, arg_value in node.value:
                 if arg_type == 'fncall':
