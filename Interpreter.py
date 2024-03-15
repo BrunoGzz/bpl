@@ -9,7 +9,7 @@ class Token:
         return f"Token(type='{self.type}', value={self.value})"
 
 def tokenize(code):
-    keywords = {'fn', 'in', 'out', 'gb', 'nor', 'rt'}
+    keywords = {'fn', 'out', 'gb', 'nor', 'rt'}
     logic_operators = {'and', 'xor', 'or', 'not', 'nand', 'nor', 'xnor'}
     tokens = []
 
@@ -17,19 +17,23 @@ def tokenize(code):
     code = code.replace('\n', ' ').replace('\t', ' ').replace('\r', ' ')
 
     # Utilizar una expresión regular más robusta para la tokenización
-    pattern = re.compile(r'\b(?:' + '|'.join(map(re.escape, keywords)) + r')\b|0x[0-9A-Fa-f]+\b|fx[0-9A-Fa-f]+\b|1x[0-9A-Fa-f]+\b|\d+\b|=\b|\b(?:and|or|xor|not|nand|nor|xnor)\b|;|#|{|}')
+    pattern = re.compile(r'\b(?:' + '|'.join(map(re.escape, keywords)) + r')\b|0x[0-9A-Fa-f]+\b|in\[(\d+)\]|ix[0-9A-Fa-f]+\b\[(\d+)\]|fx[0-9A-Fa-f]+\b|1x[0-9A-Fa-f]+\b|\d+\b|=\b|\b(?:and|or|xor|not|nand|nor|xnor)\b|;|#|{|}')
     matches = pattern.finditer(code)
 
     for match in matches:
         token_str = match.group(0)
+
         if token_str.startswith('0x'):
             tokens.append(Token('hex', token_str))
         elif token_str.startswith('fx'):
             tokens.append(Token('fn', str(token_str)))
         elif token_str.startswith('1x'):
             tokens.append(Token('fncall', str(token_str)))
-        elif token_str == 'in':
-            tokens.append(Token('input'))
+        elif token_str.startswith('in[') and token_str.endswith("]"):
+            tokens.append(Token('input', int(pattern.match(token_str).group(1))))
+        elif token_str.startswith('ix') and token_str.endswith("]"):
+            #Arreglar append de token
+            tokens.append(Token('idxhex', [pattern.match(token_str).group(0), int(pattern.match(token_str).group(1))]))
         elif token_str == 'out':
             tokens.append(Token('out'))
         elif token_str == '#':
@@ -61,10 +65,15 @@ def parse_tokens(tokens):
             if tokens[i + 1].type == 'bit' or tokens[i - 1].type == "semicolon" or tokens[i-1].type == "openbracket" or tokens[i + 1].type == 'input':
                 variable = token.value
                 if tokens[i + 1].type == "input":
-                    value = str(input(":"))
+                    value = str(input(str(tokens[i + 1].value) + " bit:"))
 
-                    if value != '0' and value != '1':
-                        handle_errors("Value error", f"Unexpected input on: {token.value}. Not binary")
+                    if len(value) != int(tokens[i+1].value):
+                        handle_errors("Value error", f"Unexpected input on: {token.value}. Not expected length.")
+
+                    for bit in value:
+                        if bit != "0" and bit != "1":
+                            handle_errors("Value error", f"Unexpected input on: {token.value}. Not binary")
+
                 else:
                     value = tokens[i + 1].value
                 ast.append(AssignmentNode(variable, value))
@@ -202,6 +211,8 @@ def parse_function_body(tokens):
                 body.append(AssignmentNode(variable, value))
                 i += 2
             elif tokens[i+1].type == "fncall":
+                variable = token.value
+                actualIndex = i
                 i += 2
                 arguments = []
                 while i < len(tokens) and tokens[i].type != 'semicolon':
@@ -210,8 +221,7 @@ def parse_function_body(tokens):
                     else:
                         arguments.append(tokens[i].value)
                         i += 1
-                print(arguments)
-                body.append(AssignmentFunctionNode(variable, tokens[i+1].value, arguments))
+                body.append(AssignmentFunctionNode(variable, tokens[actualIndex + 1].value, arguments))
             
             elif tokens[i + 2].type == 'logicoperator' and (tokens[i + 1].type == "hex" or tokens[i + 1].type == "bit") and (tokens[i + 1].type == "hex" or tokens[i + 1].type == "bit"):
                 out_index = i
@@ -292,7 +302,7 @@ def execute_function(function_name, arguments, variables, functions):
             # Asigna los valores de los argumentos a las variables locales de la función
             local_variables = dict(zip(functions[function_name].arguments, arguments))
             # Ejecuta el cuerpo de la función
-            result = execute_ast(functions[function_name].body, local_variables, functions, variables)
+            result = execute_ast(functions[function_name].body, variables, functions, variables)
             # Si la función no tiene una declaración de retorno, devuelve un valor por defecto (puede ser modificado según tus necesidades)
             return result if result is not None else print("No return")
         else:
@@ -408,5 +418,6 @@ if __name__ == "__main__":
     file_path = sys.argv[1]
     code = parse_file(file_path)
     tokens = tokenize(code)
+    print(tokens)
     ast = parse_tokens(tokens)
     execute_ast(ast)
